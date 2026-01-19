@@ -8,6 +8,9 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -62,25 +65,25 @@
     <div class="grid grid-cols-2 gap-3">
         <div class="card">
             <p class="text-xs text-bot-hint uppercase">Total Users</p>
-            <h2 class="text-2xl font-bold" id="statTotalUsers">-</h2>
+            <h2 class="text-2xl font-bold" id="statTotalUsers">...</h2>
         </div>
         <div class="card">
             <p class="text-xs text-bot-hint uppercase">Active 24h</p>
-            <h2 class="text-2xl font-bold text-green-400" id="statActive">-</h2>
+            <h2 class="text-2xl font-bold text-green-400" id="statActive">...</h2>
         </div>
         <div class="card">
             <p class="text-xs text-bot-hint uppercase">Premium</p>
-            <h2 class="text-2xl font-bold text-yellow-400" id="statPremium">-</h2>
+            <h2 class="text-2xl font-bold text-yellow-400" id="statPremium">...</h2>
         </div>
         <div class="card">
             <p class="text-xs text-bot-hint uppercase">Total Rev</p>
-            <h2 class="text-2xl font-bold text-blue-400" id="statRevenue">₹-</h2>
+            <h2 class="text-2xl font-bold text-blue-400" id="statRevenue">...</h2>
         </div>
     </div>
 
     <!-- Chart -->
     <div class="card">
-        <h3 class="text-lg font-semibold mb-4">User Growth (7d)</h3>
+        <h3 class="text-lg font-semibold mb-4">User Growth (Last 7 Days)</h3>
         <canvas id="growthChart" height="200"></canvas>
     </div>
 
@@ -109,69 +112,165 @@
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
-        tg.enableClosingConfirmation();
 
         // Theme params
-        document.body.style.backgroundColor = tg.themeParams.secondary_bg_color;
+        document.body.style.backgroundColor = tg.themeParams.secondary_bg_color || '#111827';
+
+        // Supabase Configuration
+        const SUPABASE_URL = 'https://baeuvtitensmzmdrlrep.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZXV2dGl0ZW5zbXptZHJscmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyMDM3NjYsImV4cCI6MjA4MTc3OTc2Nn0.Mb6Rpw_RbC1ft2jFUR5LXk9YzSHiJhq9UjKuYu1wpN8';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         async function fetchStats() {
             try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
+                // 1. Total Users
+                const { count: totalUsers, error: errTotal } = await supabase
+                    .from('users')
+                    .select('*', { count: 'exact', head: true });
 
-                // Update UI
-                document.getElementById('statTotalUsers').innerText = data.total_users;
-                document.getElementById('statActive').innerText = data.active_24h;
-                document.getElementById('statPremium').innerText = data.premium;
-                document.getElementById('statRevenue').innerText = '₹' + data.revenue;
+                // 2. Active Users (using jobs_used_this_month > 0 as a proxy for active)
+                const { count: activeUsers, error: errActive } = await supabase
+                    .from('users')
+                    .select('*', { count: 'exact', head: true })
+                    .gt('jobs_used_this_month', 0);
 
+                // 3. Premium Users
+                const { count: premiumUsers, error: errPremium } = await supabase
+                    .from('users')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('is_premium', true);
+
+                // 4. Revenue Calculation
+                const { data: revenueData, error: errRev } = await supabase
+                    .from('users')
+                    .select('total_credits_purchased');
+
+                let totalRevenue = 0;
+                if (revenueData) {
+                    const totalCredits = revenueData.reduce((acc, user) => acc + (user.total_credits_purchased || 0), 0);
+                    totalRevenue = totalCredits * 6; // Approx ₹6 per credit
+                }
+
+                // 5. Recent Users
+                const { data: recentUsers, error: errRecent } = await supabase
+                    .from('users')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                // Update Stats UI
+                if (!errTotal) document.getElementById('statTotalUsers').innerText = totalUsers;
+                if (!errActive) document.getElementById('statActive').innerText = activeUsers !== null ? activeUsers : 0;
+                if (!errPremium) document.getElementById('statPremium').innerText = premiumUsers;
+                document.getElementById('statRevenue').innerText = '₹' + totalRevenue.toLocaleString();
+
+                // Update Table
                 const table = document.getElementById('userTableBody');
-                table.innerHTML = data.recent_users.map(u => `
-                    <tr class="border-b border-gray-800 last:border-0">
-                        <td class="py-3 font-medium text-bot-text">${u.name}</td>
-                        <td class="py-3">
-                            <span class="px-2 py-1 rounded-full text-xs 
-                                ${u.plan === 'Premium' ? 'bg-yellow-900 text-yellow-300' :
-                        u.plan === 'Starter' ? 'bg-green-900 text-green-300' :
-                            'bg-gray-700 text-gray-300'}">
-                                ${u.plan}
-                            </span>
-                        </td>
-                        <td class="py-3 text-bot-hint">${u.joined}</td>
-                    </tr>
-                `).join('');
+                if (recentUsers) {
+                    table.innerHTML = recentUsers.map(u => {
+                        const date = new Date(u.created_at).toLocaleDateString();
+                        const plan = u.is_premium ? 'Premium' : (u.plan || 'Free');
+                        const planColor = u.is_premium ? 'bg-yellow-900 text-yellow-300' : 'bg-gray-700 text-gray-300';
+                        const username = u.username ? '@' + u.username : u.telegram_id;
+
+                        return `
+                        <tr class="border-b border-gray-800 last:border-0">
+                            <td class="py-3 font-medium text-bot-text truncate max-w-[100px]">${username}</td>
+                            <td class="py-3">
+                                <span class="px-2 py-1 rounded-full text-xs ${planColor}">
+                                    ${plan}
+                                </span>
+                            </td>
+                            <td class="py-3 text-bot-hint text-xs">${date}</td>
+                        </tr>
+                        `;
+                    }).join('');
+                }
 
             } catch (e) {
                 console.error("Error loading stats:", e);
-                // Fallback to empty state
-                document.getElementById('statTotalUsers').innerText = "ERR";
+                tg.showAlert("Error loading data: " + e.message);
             }
+
+            // Render Chart
+            renderChart();
         }
 
-        // Init Chart
-        const ctx = document.getElementById('growthChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                datasets: [{
-                    label: 'New Users',
-                    data: [12, 19, 15, 25, 32, 45, 60],
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { display: false },
-                    y: { display: false }
-                }
+        async function renderChart() {
+            // Fetch last 7 days signups
+            const days = 7;
+            const labels = [];
+            const dataCounts = [];
+
+            for (let i = days - 1; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dateStr = d.toISOString().split('T')[0];
+                labels.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+
+                // For this date, count API calls might be expensive, so we'll just mock it or 
+                // do a single query if we had a dedicated stats table. 
+                // For now, let's fetch all users from last 7 days and group them Client-side.
+                // This is okay for small scale (< 5000 users).
             }
-        });
+
+            // Efficient query: Get all users created in last 7 days
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 7);
+
+            const { data: usersData } = await supabase
+                .from('users')
+                .select('created_at')
+                .gte('created_at', startDate.toISOString());
+
+            if (usersData) {
+                const counts = {};
+                usersData.forEach(u => {
+                    const d = u.created_at.split('T')[0];
+                    counts[d] = (counts[d] || 0) + 1;
+                });
+
+                // Map to labels
+                const today = new Date();
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date();
+                    d.setDate(today.getDate() - i);
+                    const ds = d.toISOString().split('T')[0];
+                    dataCounts.push(counts[ds] || 0);
+                }
+            } else {
+                // Fallback if query fails
+                dataCounts.push(0, 0, 0, 0, 0, 0, 0);
+            }
+
+            const ctx = document.getElementById('growthChart').getContext('2d');
+            // Destroy existing chart if any (simple hack: verify if window.myChart exists)
+            if (window.myChart) window.myChart.destroy();
+
+            window.myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'New Users',
+                        data: dataCounts,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: { display: false } // Hide Y axis for cleaner look
+                    }
+                }
+            });
+        }
 
         // Load data on start
         fetchStats();
