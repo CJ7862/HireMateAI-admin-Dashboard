@@ -120,29 +120,29 @@
         const SUPABASE_URL = 'https://baeuvtitensmzmdrlrep.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhZXV2dGl0ZW5zbXptZHJscmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyMDM3NjYsImV4cCI6MjA4MTc3OTc2Nn0.Mb6Rpw_RbC1ft2jFUR5LXk9YzSHiJhq9UjKuYu1wpN8';
 
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         async function fetchStats() {
             try {
                 // 1. Total Users
-                const { count: totalUsers, error: errTotal } = await supabase
+                const { count: totalUsers, error: errTotal } = await dbClient
                     .from('users')
                     .select('*', { count: 'exact', head: true });
 
                 // 2. Active Users (using jobs_used_this_month > 0 as a proxy for active)
-                const { count: activeUsers, error: errActive } = await supabase
+                const { count: activeUsers, error: errActive } = await dbClient
                     .from('users')
                     .select('*', { count: 'exact', head: true })
                     .gt('jobs_used_this_month', 0);
 
                 // 3. Premium Users
-                const { count: premiumUsers, error: errPremium } = await supabase
+                const { count: premiumUsers, error: errPremium } = await dbClient
                     .from('users')
                     .select('*', { count: 'exact', head: true })
                     .eq('is_premium', true);
 
                 // 4. Revenue Calculation
-                const { data: revenueData, error: errRev } = await supabase
+                const { data: revenueData, error: errRev } = await dbClient
                     .from('users')
                     .select('total_credits_purchased');
 
@@ -153,7 +153,7 @@
                 }
 
                 // 5. Recent Users
-                const { data: recentUsers, error: errRecent } = await supabase
+                const { data: recentUsers, error: errRecent } = await dbClient
                     .from('users')
                     .select('*')
                     .order('created_at', { ascending: false })
@@ -219,7 +219,7 @@
             const startDate = new Date();
             startDate.setDate(startDate.getDate() - 7);
 
-            const { data: usersData } = await supabase
+            const { data: usersData } = await dbClient
                 .from('users')
                 .select('created_at')
                 .gte('created_at', startDate.toISOString());
