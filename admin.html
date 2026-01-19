@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HireMateAI Admin</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        bot: {
+                            bg: 'var(--tg-theme-bg-color, #1f2937)',
+                            text: 'var(--tg-theme-text-color, #f3f4f6)',
+                            hint: 'var(--tg-theme-hint-color, #9ca3af)',
+                            link: 'var(--tg-theme-link-color, #3b82f6)',
+                            button: 'var(--tg-theme-button-color, #3b82f6)',
+                            buttonText: 'var(--tg-theme-button-text-color, #ffffff)',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: var(--tg-theme-secondary-bg-color, #111827);
+            color: var(--tg-theme-text-color, #ffffff);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        .card {
+            background-color: var(--tg-theme-bg-color, #1f2937);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+
+<body class="p-4 space-y-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-2">
+        <div>
+            <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-400">
+                Dashboard
+            </h1>
+            <p class="text-sm text-bot-hint" id="adminName">Welcome Admin</p>
+        </div>
+        <div class="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center font-bold">
+            HM
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-2 gap-3">
+        <div class="card">
+            <p class="text-xs text-bot-hint uppercase">Total Users</p>
+            <h2 class="text-2xl font-bold" id="statTotalUsers">-</h2>
+        </div>
+        <div class="card">
+            <p class="text-xs text-bot-hint uppercase">Active 24h</p>
+            <h2 class="text-2xl font-bold text-green-400" id="statActive">-</h2>
+        </div>
+        <div class="card">
+            <p class="text-xs text-bot-hint uppercase">Premium</p>
+            <h2 class="text-2xl font-bold text-yellow-400" id="statPremium">-</h2>
+        </div>
+        <div class="card">
+            <p class="text-xs text-bot-hint uppercase">Total Rev</p>
+            <h2 class="text-2xl font-bold text-blue-400" id="statRevenue">₹-</h2>
+        </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="card">
+        <h3 class="text-lg font-semibold mb-4">User Growth (7d)</h3>
+        <canvas id="growthChart" height="200"></canvas>
+    </div>
+
+    <!-- User Table -->
+    <div class="card overflow-hidden">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold">Recent Users</h3>
+            <button onclick="fetchStats()" class="text-bot-link text-sm">Refresh</button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="text-xs text-bot-hint uppercase border-b border-gray-700">
+                    <tr>
+                        <th class="py-2">User</th>
+                        <th class="py-2">Plan</th>
+                        <th class="py-2">Joined</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody">
+                    <!-- Data here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.enableClosingConfirmation();
+
+        // Theme params
+        document.body.style.backgroundColor = tg.themeParams.secondary_bg_color;
+
+        async function fetchStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+
+                // Update UI
+                document.getElementById('statTotalUsers').innerText = data.total_users;
+                document.getElementById('statActive').innerText = data.active_24h;
+                document.getElementById('statPremium').innerText = data.premium;
+                document.getElementById('statRevenue').innerText = '₹' + data.revenue;
+
+                const table = document.getElementById('userTableBody');
+                table.innerHTML = data.recent_users.map(u => `
+                    <tr class="border-b border-gray-800 last:border-0">
+                        <td class="py-3 font-medium text-bot-text">${u.name}</td>
+                        <td class="py-3">
+                            <span class="px-2 py-1 rounded-full text-xs 
+                                ${u.plan === 'Premium' ? 'bg-yellow-900 text-yellow-300' :
+                        u.plan === 'Starter' ? 'bg-green-900 text-green-300' :
+                            'bg-gray-700 text-gray-300'}">
+                                ${u.plan}
+                            </span>
+                        </td>
+                        <td class="py-3 text-bot-hint">${u.joined}</td>
+                    </tr>
+                `).join('');
+
+            } catch (e) {
+                console.error("Error loading stats:", e);
+                // Fallback to empty state
+                document.getElementById('statTotalUsers').innerText = "ERR";
+            }
+        }
+
+        // Init Chart
+        const ctx = document.getElementById('growthChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                datasets: [{
+                    label: 'New Users',
+                    data: [12, 19, 15, 25, 32, 45, 60],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { display: false },
+                    y: { display: false }
+                }
+            }
+        });
+
+        // Load data on start
+        fetchStats();
+    </script>
+</body>
+
+</html>
